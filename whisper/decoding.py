@@ -14,6 +14,23 @@ from .utils import compression_ratio
 if TYPE_CHECKING:
     from .model import Whisper
 
+_last_print_len = 0 
+def reprint(msg, finish=False): 
+    global _last_print_len 
+     
+    print('\r '*_last_print_len, end='') 
+     
+    if finish: 
+        end = '\n' 
+        _last_print_len = 0 
+    else: 
+        end = '\r' 
+        _last_print_len = len(msg) 
+     
+    if not finish:
+        print(end + msg, end='') 
+    else:
+       print("\r" + msg + "\n", end='')
 
 @torch.no_grad()
 def detect_language(model: "Whisper", mel: Tensor, tokenizer: Tokenizer = None) -> Tuple[Tensor, List[dict]]:
@@ -581,7 +598,6 @@ class DecodingTask:
         n_batch = tokens.shape[0]
         sum_logprobs: Tensor = torch.zeros(n_batch, device=audio_features.device)
         no_caption_probs = [np.nan] * n_batch
-
         try:
             for i in range(self.sample_len):
                 logits = self.inference.logits(tokens, audio_features)
@@ -596,11 +612,15 @@ class DecodingTask:
                 # apply the logit filters, e.g. for suppressing or applying penalty to
                 for logit_filter in self.logit_filters:
                     logit_filter.apply(logits, tokens)
-
+                
                 # expand the tokens tensor with the selected next tokens
                 tokens, completed = self.decoder.update(tokens, logits, sum_logprobs)
-
+                if self.model.verbose:
+                    reprint(' '.join(self.tokenizer.decode(l).strip() for l in tokens).replace("\n", "").split("<|startoftranscript|>")[1].split("<|startofprev|>")[0].strip())
+                
                 if completed or tokens.shape[-1] > self.n_ctx:
+                    if self.model.verbose:
+                        reprint('', True)
                     break
         finally:
             self.inference.cleanup_caching()
